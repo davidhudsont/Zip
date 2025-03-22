@@ -50,37 +50,37 @@ public:
 
     }
 
-    struct Flags
+    union Flags
     {
-        union
+        struct flags
         {
             std::uint16_t encyped : 1;
             std::uint16_t compresssion : 2;
             std::uint16_t use_data_descriptor : 1;
             std::uint16_t unused : 12;
-            std::uint16_t flags;
         };
+        std::uint16_t data;
     };
 
 
-    struct MS_Dos_date {
-        union
-        {
+    union MS_Dos_date
+    {
+        struct date {
             std::uint16_t day_of_month : 5;
             std::uint16_t month : 4;
             std::uint16_t year : 7;
-            std::uint16_t date;
-        };
+        } date;
+        std::uint16_t data;
     };
 
-    struct MS_Dos_time {
-        union
-        {
+    union MS_Dos_time
+    {
+        struct time {
             std::uint16_t second : 5;
             std::uint16_t minute : 6;
             std::uint16_t hour : 5;
-            std::uint16_t time;
-        };
+        } time;
+        std::uint16_t data;
     };
 
     struct Local_header
@@ -111,10 +111,10 @@ public:
 
         ptr = parse_field(ptr, m_header.signature);
         ptr = parse_field(ptr, m_header.version);
-        ptr = parse_field(ptr, m_header.flags.flags);
+        ptr = parse_field(ptr, m_header.flags.data);
         ptr = parse_field(ptr, m_header.compression);
-        ptr = parse_field(ptr, m_header.time.time);
-        ptr = parse_field(ptr, m_header.date.date);
+        ptr = parse_field(ptr, m_header.time.data);
+        ptr = parse_field(ptr, m_header.date.data);
         ptr = parse_field(ptr, m_header.crc);
         ptr = parse_field(ptr, m_header.compressed_size);
         ptr = parse_field(ptr, m_header.uncompressed_size);
@@ -134,8 +134,8 @@ public:
         std::cout << "\tSignature: 0x" << std::hex << std::setw(8) << std::setfill('0') << m_header.signature << "\n";
         std::cout << std::dec << "\tVersion needed to extract: " << m_header.version << "\n";
         std::cout << "\tCompression method: " << m_header.compression << "\n";
-        std::cout << "\tDate: " << m_header.date.month << "/" << m_header.date.day_of_month << "/" << m_header.date.year + 1980 << "\n";
-        std::cout << "\tTime: " << m_header.time.hour << ":" << m_header.time.minute << ":" << m_header.time.second * 2 << "\n";
+        std::cout << "\tDate: " << m_header.date.date.month << "/" << m_header.date.date.day_of_month << "/" << m_header.date.date.year + 1980 << "\n";
+        std::cout << "\tTime: " << m_header.time.time.hour << ":" << m_header.time.time.minute << ":" << m_header.time.time.second * 2 << "\n";
         std::cout << std::hex << "\tCRC: 0x" << m_header.crc << "\n";
         std::cout << std::dec << "\tCompressed Size: " << m_header.compressed_size << " Bytes\n";
         std::cout << "\tUncompressed Size: " << m_header.uncompressed_size << " Bytes\n";
