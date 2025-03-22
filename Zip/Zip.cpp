@@ -9,36 +9,14 @@
 #include <map>
 
 
-uint16_t swap_endian(uint16_t value) {
-    return (value << 8) | (value >> 8);
+uint16_t convert_to_host(uint16_t value) {
+    return value;
 }
 
 // Function to swap the byte order of a 32-bit value
-uint32_t swap_endian(uint32_t value) {
-    return (value << 24) | ((value << 8) & 0x00FF0000) | ((value >> 8) & 0x0000FF00) | (value >> 24);
+uint32_t convert_to_host(uint32_t value) {
+    return value;
 }
-
-// Function to swap the byte order of a 64-bit value
-uint64_t swap_endian(uint64_t value) {
-    return (value << 56) | ((value << 40) & 0x00FF000000000000) | ((value << 24) & 0x0000FF0000000000) | ((value << 8) & 0x000000FF00000000) |
-        ((value >> 8) & 0x00000000FF000000) | ((value >> 24) & 0x0000000000FF0000) | ((value >> 40) & 0x000000000000FF00) | (value >> 56);
-}
-
-std::uint8_t* parse_field(std::uint8_t* ptr, std::uint16_t & value)
-{
-    std::memcpy(&value, ptr, sizeof(std::uint16_t));
-    return ptr + sizeof(std::uint16_t);
-}
-
-std::uint8_t* parse_field(std::uint8_t* ptr, std::uint32_t& value)
-{
-    std::memcpy(&value, ptr, sizeof(std::uint32_t));
-    return ptr + sizeof(std::uint32_t);
-}
-
-
-
-
 
 namespace Zip
 {
@@ -48,6 +26,20 @@ public:
     Parse()
     {
 
+    }
+
+    void parse_field(std::uint16_t& value)
+    {
+        std::memcpy(&value, ptr, sizeof(std::uint16_t));
+        ptr += sizeof(std::uint16_t);
+        value = convert_to_host(value);
+    }
+
+    void parse_field(std::uint32_t& value)
+    {
+        std::memcpy(&value, ptr, sizeof(std::uint32_t));
+        ptr += sizeof(std::uint32_t);
+        value = convert_to_host(value);
     }
 
     union Flags
@@ -98,6 +90,43 @@ public:
         std::uint16_t extra_field_length{};
     };
 
+    struct Zip_file
+    {
+        Local_header header{};
+        std::string file_name{};
+        std::vector<std::uint8_t> m_file_data{};
+    };
+
+    struct Central_directory {
+
+    };
+
+    Zip_file parse_zipfile()
+    {
+        Local_header header{};
+        parse_field(header.signature);
+        parse_field(header.version);
+        parse_field(header.flags.data);
+        parse_field(header.compression);
+        parse_field(header.time.data);
+        parse_field(header.date.data);
+        parse_field(header.crc);
+        parse_field(header.compressed_size);
+        parse_field(header.uncompressed_size);
+        parse_field(header.file_name_length);
+        parse_field(header.extra_field_length);
+
+        char name[200]{};
+        std::memcpy(name, ptr, header.file_name_length);
+        std::string file_name{ name };
+        ptr += header.file_name_length;
+        ptr += header.extra_field_length;
+
+        ptr += header.compressed_size;
+
+        return { header, file_name, {} };
+    }
+
     void parse_zip(std::filesystem::path path)
     {
         auto file_size = std::filesystem::file_size(path);
@@ -107,48 +136,36 @@ public:
         m_stream.read(reinterpret_cast<char*>(m_buffer.data()), file_size);
 
         auto header_size = sizeof(Local_header);
-        std::uint8_t* ptr = m_buffer.data();
-
-        ptr = parse_field(ptr, m_header.signature);
-        ptr = parse_field(ptr, m_header.version);
-        ptr = parse_field(ptr, m_header.flags.data);
-        ptr = parse_field(ptr, m_header.compression);
-        ptr = parse_field(ptr, m_header.time.data);
-        ptr = parse_field(ptr, m_header.date.data);
-        ptr = parse_field(ptr, m_header.crc);
-        ptr = parse_field(ptr, m_header.compressed_size);
-        ptr = parse_field(ptr, m_header.uncompressed_size);
-        ptr = parse_field(ptr, m_header.file_name_length);
-        ptr = parse_field(ptr, m_header.extra_field_length);
-
-        char name[200]{};
-        std::memcpy(name, ptr, m_header.file_name_length);
-        file_name = name;
-        ptr += m_header.file_name_length;
-        ptr += m_header.extra_field_length;
+        ptr = m_buffer.data();
+        m_files.push_back(parse_zipfile());
+        m_files.push_back(parse_zipfile());
     }
 
     void print_attributes()
     {
-        std::cout << "Local header:\n";
-        std::cout << "\tSignature: 0x" << std::hex << std::setw(8) << std::setfill('0') << m_header.signature << "\n";
-        std::cout << std::dec << "\tVersion needed to extract: " << m_header.version << "\n";
-        std::cout << "\tCompression method: " << m_header.compression << "\n";
-        std::cout << "\tDate: " << m_header.date.month << "/" << m_header.date.day_of_month << "/" << m_header.date.year + 1980 << "\n";
-        std::cout << "\tTime: " << m_header.time.hour << ":" << m_header.time.minute << ":" << m_header.time.second * 2 << "\n";
-        std::cout << std::hex << "\tCRC: 0x" << m_header.crc << "\n";
-        std::cout << std::dec << "\tCompressed Size: " << m_header.compressed_size << " Bytes\n";
-        std::cout << "\tUncompressed Size: " << m_header.uncompressed_size << " Bytes\n";
-        std::cout << "\tFile name length: " << m_header.file_name_length << " Bytes\n";
-        std::cout << "\tExtra field length: " << m_header.extra_field_length << " Bytes\n";
-        std::cout << "\tFile name: " << file_name << "\n";
+        for (auto const& file : m_files)
+        {
+            std::cout << "Local header:\n";
+            std::cout << "\tSignature: 0x" << std::hex << std::setw(8) << std::setfill('0') << file.header.signature << "\n";
+            std::cout << std::dec << "\tVersion needed to extract: " << file.header.version << "\n";
+            std::cout << "\tCompression method: " << file.header.compression << "\n";
+            std::cout << "\tDate: " << file.header.date.month << "/" << file.header.date.day_of_month << "/" << file.header.date.year + 1980 << "\n";
+            std::cout << "\tTime: " << file.header.time.hour << ":" << file.header.time.minute << ":" << file.header.time.second * 2 << "\n";
+            std::cout << std::hex << "\tCRC: 0x" << file.header.crc << "\n";
+            std::cout << std::dec << "\tCompressed Size: " << file.header.compressed_size << " Bytes\n";
+            std::cout << "\tUncompressed Size: " << file.header.uncompressed_size << " Bytes\n";
+            std::cout << "\tFile name length: " << file.header.file_name_length << " Bytes\n";
+            std::cout << "\tExtra field length: " << file.header.extra_field_length << " Bytes\n";
+            std::cout << "\tFile name: " << file.file_name << "\n";
+        }
     }
 
 private:
     std::ifstream m_stream;
     std::vector<std::uint8_t> m_buffer;
-    Local_header m_header{};
-    std::string file_name{};
+    std::uint8_t* ptr = nullptr;
+
+    std::vector<Zip_file> m_files{};
     std::map<std::uint8_t, std::string> m_version_map{
         { 0, "MS-DOS/FAT32"},
         { 14, "VFAT"},
@@ -160,7 +177,7 @@ private:
 
 int main()
 {
-    std::filesystem::path path("D:/CodeProjects/Zip/Example/example1.zip");
+    std::filesystem::path path("D:/CodeProjects/Zip/Example/example.zip");
 
     Zip::Parse p{};
 
