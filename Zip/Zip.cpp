@@ -31,22 +31,22 @@ public:
 
     void parse_field(std::uint16_t& value)
     {
-        std::memcpy(&value, ptr, sizeof(std::uint16_t));
-        ptr += sizeof(std::uint16_t);
+        std::memcpy(&value, m_ptr, sizeof(std::uint16_t));
+        m_ptr += sizeof(std::uint16_t);
         value = convert_to_host(value);
     }
 
     void parse_field(std::uint32_t& value)
     {
-        std::memcpy(&value, ptr, sizeof(std::uint32_t));
-        ptr += sizeof(std::uint32_t);
+        std::memcpy(&value, m_ptr, sizeof(std::uint32_t));
+        m_ptr += sizeof(std::uint32_t);
         value = convert_to_host(value);
     }
 
     std::uint32_t check_signature()
     {
         std::uint32_t value{};
-        std::memcpy(&value, ptr, sizeof(std::uint32_t));
+        std::memcpy(&value, m_ptr, sizeof(std::uint32_t));
         value = convert_to_host(value);
         return value;
     }
@@ -143,12 +143,12 @@ public:
         parse_field(header.extra_field_length);
 
         char name[200]{};
-        std::memcpy(name, ptr, header.file_name_length);
+        std::memcpy(name, m_ptr, header.file_name_length);
         std::string file_name{ name };
-        ptr += header.file_name_length;
-        ptr += header.extra_field_length;
+        m_ptr += header.file_name_length;
+        m_ptr += header.extra_field_length;
 
-        ptr += header.compressed_size;
+        m_ptr += header.compressed_size;
 
         return { header, file_name, {} };
     }
@@ -175,11 +175,11 @@ public:
         parse_field(header.offset_of_local_header);
 
         char name[200]{};
-        std::memcpy(name, ptr, header.file_name_length);
+        std::memcpy(name, m_ptr, header.file_name_length);
         header.file_name = name;
-        ptr += header.file_name_length;
-        ptr += header.extra_field_length;
-        ptr += header.file_comment_length;
+        m_ptr += header.file_name_length;
+        m_ptr += header.extra_field_length;
+        m_ptr += header.file_comment_length;
         
         return header;
     }
@@ -210,7 +210,7 @@ public:
         parse_field(header.zipfile_comment_length);
 
         char name[200]{};
-        std::memcpy(name, ptr, header.zipfile_comment_length);
+        std::memcpy(name, m_ptr, header.zipfile_comment_length);
         header.zipfile_comment = name;
 
         return header;
@@ -221,12 +221,13 @@ public:
         auto file_size = std::filesystem::file_size(path);
         m_buffer.resize(file_size);
 
-        m_stream.open(path, std::ios::binary);
-        m_stream.read(reinterpret_cast<char*>(m_buffer.data()), file_size);
-        m_stream.close();
+        std::ifstream stream{};
+        stream.open(path, std::ios::binary);
+        stream.read(reinterpret_cast<char*>(m_buffer.data()), file_size);
+        stream.close();
 
         auto header_size = sizeof(Local_header);
-        ptr = m_buffer.data();
+        m_ptr = m_buffer.data();
         auto signature{ check_signature() };
         do {
             m_files.push_back(parse_zipfile());
@@ -235,12 +236,11 @@ public:
 
         signature = check_signature();
         do {
-            std::cout << "Central Dir Parsing\n";
             m_dirs.push_back(parse_central_dir());
             signature = check_signature();
         } while (signature == 0x02014b50);
 
-        end_of_central_dir = parse_end_of_central_dir();
+        m_end_of_central_dir = parse_end_of_central_dir();
 
     }
 
@@ -269,47 +269,30 @@ public:
             std::cout << "\tFile name: " << central_dir.file_name << "\n";
         }
 
-        std::cout << "Number of entries in central dir: " << end_of_central_dir.total_entries << "\n";
+        std::cout << "Number of entries in central dir: " << m_end_of_central_dir.total_entries << "\n";
     }
 
 private:
-    std::ifstream m_stream;
-    FILE* m_file;
-    std::vector<std::uint8_t> m_buffer;
-    std::uint8_t* ptr = nullptr;
+    std::map<std::uint8_t, std::string> m_version_map{
+        { 0, "MS-DOS/FAT32"},
+    };
 
+    std::vector<std::uint8_t> m_buffer{};
+    std::uint8_t* m_ptr{ nullptr };
     std::vector<Zip_file> m_files{};
     std::vector<Central_directory> m_dirs{};
 
-    EndOfCentralDir end_of_central_dir{};
-;    std::map<std::uint8_t, std::string> m_version_map{
-        { 0, "MS-DOS/FAT32"},
-        { 14, "VFAT"},
-        { 20, "Unused"},
-    };
+    EndOfCentralDir m_end_of_central_dir{};
 };
 
 }
 
 int main()
 {
-    std::filesystem::path path("D:/CodeProjects/Zip/Example/examples.zip");
 
     Zip::Parse p{};
 
+    std::filesystem::path path("D:/CodeProjects/Zip/Example/package.zip");
     p.parse_zip(path);
-
     p.print_attributes();
-
 }
-
-// Run program: Ctrl + F5 or Debug > Start Without Debugging menu
-// Debug program: F5 or Debug > Start Debugging menu
-
-// Tips for Getting Started: 
-//   1. Use the Solution Explorer window to add/manage files
-//   2. Use the Team Explorer window to connect to source control
-//   3. Use the Output window to see build output and other messages
-//   4. Use the Error List window to view errors
-//   5. Go to Project > Add New Item to create new code files, or Project > Add Existing Item to add existing code files to the project
-//   6. In the future, to open this project again, go to File > Open > Project and select the .sln file
