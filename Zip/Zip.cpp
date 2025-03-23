@@ -19,6 +19,8 @@ uint32_t convert_to_host(uint32_t value) {
     return value;
 }
 
+
+
 namespace Zip
 {
 class Parse
@@ -28,6 +30,7 @@ public:
     {
 
     }
+    static constexpr std::size_t END_OF_CENTRAL_DIR_OFFSET{ 21 };
 
     void parse_field(std::uint16_t& value)
     {
@@ -103,7 +106,6 @@ public:
     {
         Local_header header{};
         std::string file_name{};
-        std::vector<std::uint8_t> m_file_data{};
     };
 
     struct Central_directory {
@@ -127,9 +129,11 @@ public:
         std::string file_name{};
     };
 
-    Zip_file parse_zipfile()
+    Zip_file parse_zipfile(int index)
     {
         Local_header header{};
+        m_ptr = m_buffer.data() + m_dirs[index].offset_of_local_header;
+
         parse_field(header.signature);
         parse_field(header.version);
         parse_field(header.flags.data);
@@ -150,12 +154,13 @@ public:
 
         m_ptr += header.compressed_size;
 
-        return { header, file_name, {} };
+        return { header, file_name };
     }
 
     Central_directory parse_central_dir()
     {
         Central_directory header{};
+
         parse_field(header.signature);
         parse_field(header.version_made_by);
         parse_field(header.version_need_to_extract);
@@ -200,6 +205,10 @@ public:
     EndOfCentralDir parse_end_of_central_dir()
     {
         EndOfCentralDir header{};
+        m_ptr = &m_buffer[m_buffer.size() -1];
+
+        m_ptr -= END_OF_CENTRAL_DIR_OFFSET;
+
         parse_field(header.signature);
         parse_field(header.disk_number);
         parse_field(header.disk_number2);
@@ -228,48 +237,52 @@ public:
 
         auto header_size = sizeof(Local_header);
         m_ptr = m_buffer.data();
-        auto signature{ check_signature() };
-        do {
-            m_files.push_back(parse_zipfile());
-            signature = check_signature();
-        } while (signature == 0x04034b50);
-
-        signature = check_signature();
-        do {
-            m_dirs.push_back(parse_central_dir());
-            signature = check_signature();
-        } while (signature == 0x02014b50);
 
         m_end_of_central_dir = parse_end_of_central_dir();
+        print_end_of_central_dir();
 
+        // Move pointer to start of central dirs
+        m_ptr = m_buffer.data() + m_end_of_central_dir.starting_disk_num;
+        for (int i= 0; i < m_end_of_central_dir.total_entries; i++)
+        {
+            m_dirs.push_back(parse_central_dir());
+            print_central_dir(m_dirs[i]);
+        }
+
+        for (int i = 0; i < m_end_of_central_dir.total_entries; i++)
+        {
+           m_files.push_back(parse_zipfile(i));
+           print_attributes(m_files[i]);
+        }
     }
 
-    void print_attributes()
+    void print_end_of_central_dir()
     {
-        for (auto const& file : m_files)
-        {
-            std::cout << "Local header:\n";
-            std::cout << "\tSignature: 0x" << std::hex << std::setw(8) << std::setfill('0') << file.header.signature << "\n";
-            std::cout << std::dec << "\tVersion needed to extract: " << file.header.version << "\n";
-            std::cout << "\tFlags: " << file.header.flags.use_data_descriptor << "\n";
-            std::cout << "\tCompression method: " << file.header.compression << "\n";
-            std::cout << "\tDate: " << file.header.date.month << "/" << file.header.date.day_of_month << "/" << file.header.date.year + 1980 << "\n";
-            std::cout << "\tTime: " << file.header.time.hour << ":" << file.header.time.minute << ":" << file.header.time.second * 2 << "\n";
-            std::cout << std::hex << "\tCRC: 0x" << file.header.crc << "\n";
-            std::cout << std::dec << "\tCompressed Size: " << file.header.compressed_size << " Bytes\n";
-            std::cout << "\tUncompressed Size: " << file.header.uncompressed_size << " Bytes\n";
-            std::cout << "\tFile name length: " << file.header.file_name_length << " Bytes\n";
-            std::cout << "\tExtra field length: " << file.header.extra_field_length << " Bytes\n";
-            std::cout << "\tFile name: " << file.file_name << "\n";
-        }
-
-        for (auto const& central_dir : m_dirs)
-        {
-            std::cout << "Central Dir\n";
-            std::cout << "\tFile name: " << central_dir.file_name << "\n";
-        }
-
         std::cout << "Number of entries in central dir: " << m_end_of_central_dir.total_entries << "\n";
+    }
+
+    void print_central_dir(Central_directory central_dir)
+    {
+        std::cout << "Central Dir\n";
+        std::cout << "\tFile name: " << central_dir.file_name << "\n";
+        std::cout << "\tLocal Offset:" << central_dir.offset_of_local_header << "\n";
+    }
+
+    void print_attributes(Zip_file file)
+    {
+        std::cout << "Local header:\n";
+        std::cout << "\tSignature: 0x" << std::hex << std::setw(8) << std::setfill('0') << file.header.signature << "\n";
+        std::cout << std::dec << "\tVersion needed to extract: " << file.header.version << "\n";
+        std::cout << "\tFlags: " << file.header.flags.use_data_descriptor << "\n";
+        std::cout << "\tCompression method: " << file.header.compression << "\n";
+        std::cout << "\tDate: " << file.header.date.month << "/" << file.header.date.day_of_month << "/" << file.header.date.year + 1980 << "\n";
+        std::cout << "\tTime: " << file.header.time.hour << ":" << file.header.time.minute << ":" << file.header.time.second * 2 << "\n";
+        std::cout << std::hex << "\tCRC: 0x" << file.header.crc << "\n";
+        std::cout << std::dec << "\tCompressed Size: " << file.header.compressed_size << " Bytes\n";
+        std::cout << "\tUncompressed Size: " << file.header.uncompressed_size << " Bytes\n";
+        std::cout << "\tFile name length: " << file.header.file_name_length << " Bytes\n";
+        std::cout << "\tExtra field length: " << file.header.extra_field_length << " Bytes\n";
+        std::cout << "\tFile name: " << file.file_name << "\n";
     }
 
 private:
@@ -294,9 +307,8 @@ int main()
 
     auto cwd = std::filesystem::current_path();
     std::cout << cwd << "\n";
-    std::filesystem::path path = cwd.append("../Example/package.zip");
+    std::filesystem::path path = cwd.append("../Example/example.zip");
     std::cout << path << "\n";
 
     p.parse_zip(path);
-    p.print_attributes();
 }
