@@ -292,7 +292,11 @@ int main()
 
     Zip::Parse p{};
 
-    std::filesystem::path path("D:/CodeProjects/Zip/Example/package.zip");
+    auto cwd = std::filesystem::current_path();
+    std::cout << cwd << "\n";
+    std::filesystem::path path = cwd.append("../Example/package.zip");
+    std::cout << path << "\n";
+
     p.parse_zip(path);
     p.print_attributes();
 }
